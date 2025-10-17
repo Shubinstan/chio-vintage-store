@@ -1,0 +1,26 @@
+# Dependencies
+# The node_modules folder can be huge, and I can always recreate it by running `npm install`.
+/node_modules
+
+# Build output
+# The final build of the site. Git doesn't need to track this.
+/dist
+/build
+
+# Logs and temporary files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secret keys and environment variables
+# This file contains my Firebase keys and other secrets, so it should NEVER be on GitHub.
+.env
+.env.local
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE config folders
+.vscode/
+.idea/

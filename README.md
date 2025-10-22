@@ -2,7 +2,7 @@
 
 A feature-rich, responsive e-commerce application for a vintage clothing store, built from the ground up with a modern technology stack including React, TypeScript, and Firebase. This project demonstrates a comprehensive understanding of front-end development, state management, and backend-as-a-service (BaaS) integration.
 
-**Live Demo:** [Your Live Site URL Here]
+**Live Demo:** https://chio-vintage-store.vercel.app/
 
 ---
 

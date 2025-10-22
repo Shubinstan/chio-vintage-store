@@ -10,15 +10,15 @@ import { useAuthStore } from './store/authStore';
 import { useCartStore } from './store/cartStore';
 import { Toaster } from 'react-hot-toast';
 
-// Import styles and themes
+// Import my themes and the GlobalStyles component
 import { lightTheme, darkTheme } from './styles/theme';
-import { GlobalStyles } from './styles/GlobalStyles'; // Ensure GlobalStyles is imported
+import { GlobalStyles } from './styles/GlobalStyles';
 
 // Import layout and common components
 import Header from './components/layout/Header';
 import SignUpOfferModal from './components/common/SignUpOfferModal';
 
-// Import page components
+// Import all my page components
 import HomePage from './pages/HomePage';
 import CatalogPage from './pages/CatalogPage';
 import AboutPage from './pages/AboutPage';
@@ -30,108 +30,97 @@ import CheckoutPage from './pages/CheckoutPage';
 import OrderConfirmationPage from './pages/OrderConfirmationPage';
 
 function App() {
-  // State for managing the light/dark theme ('light' or 'dark')
-  const [theme, setTheme] = useState('light');
-  // State to control the visibility of the sign-up offer modal
+  // State to manage the current theme mode ('light' or 'dark')
+  const [themeMode, setThemeMode] = useState('light');
+  // State for the sign-up offer modal visibility
   const [isOfferModalOpen, setOfferModalOpen] = useState(false);
-  
-  // Get state and actions from the global authentication store
+
+  // Getting state and functions from my Zustand stores
   const { user, isLoading, setUser, setLoading, fetchUserData } = useAuthStore();
-  // Get state and actions from the global cart store
   const { syncCartWithFirestore, items: cartItems, _hasHydrated } = useCartStore();
 
-  // Effect 1: Handles authentication state changes and initial cart sync.
-  // Runs once on mount and whenever the relevant store functions/state change.
+  // Determine the current theme object based on the themeMode state
+  const currentTheme = themeMode === 'light' ? lightTheme : darkTheme;
+
+  // WORKAROUND IMPLEMENTATION:
+  // This effect runs whenever the theme changes.
+  // It applies the current theme's colors as CSS variables directly onto the <body> tag.
+  // This way, GlobalStyles can use these variables without needing the theme object directly, fixing the TS error.
   useEffect(() => {
-    // onAuthStateChanged listens for login/logout events from Firebase Auth
+    const root = document.body; // Target the body element
+    // Set the CSS variables based on the current theme object
+    root.style.setProperty('--color-bg', currentTheme.body);
+    root.style.setProperty('--color-text', currentTheme.text);
+    // Also setting variables for accent and card background for potential use elsewhere
+    root.style.setProperty('--color-accent-val', currentTheme.accent);
+    root.style.setProperty('--color-card-bg-val', currentTheme.cardBg);
+  }, [currentTheme]); // Re-run this effect only when currentTheme changes
+
+  // Effect 1: Handle user authentication state changes (login/logout)
+  useEffect(() => {
+    // Listen to Firebase Auth state changes
     const unsubscribe = onAuthStateChanged(auth, async (currentUser: User | null) => {
-      setUser(currentUser); // Update the global user state
+      setUser(currentUser); // Update user in global store
       if (currentUser) {
-        // If a user logs in, fetch their custom data (e.g., purchase history)
-        await fetchUserData(currentUser.uid);
+        await fetchUserData(currentUser.uid); // Fetch additional user data if logged in
       }
-      
-      // Only attempt to sync the cart after it has been loaded from localStorage (_hasHydrated is true)
-      if (_hasHydrated) { 
-        if (currentUser) {
-          // If a user is logged in, merge their local cart (from guest session) with their Firestore cart
-          await syncCartWithFirestore(currentUser);
-        }
-        // If currentUser is null (user logged out), we don't clear the cart here.
-        // It persists in localStorage for the guest session.
+      // Sync cart with Firestore after localStorage hydration and user state is known
+      if (_hasHydrated && currentUser) {
+        await syncCartWithFirestore(currentUser);
       }
-      setLoading(false); // Mark authentication check as complete
+      setLoading(false); // Mark auth check as complete
     });
-
-    // Cleanup function: Unsubscribe from the listener when the App component unmounts
+    // Cleanup the listener on component unmount
     return () => unsubscribe();
-  }, [setUser, setLoading, fetchUserData, syncCartWithFirestore, _hasHydrated]); // Dependencies array
+  }, [setUser, setLoading, fetchUserData, syncCartWithFirestore, _hasHydrated]);
 
-  // Effect 2: Persists cart changes to Firestore for logged-in users.
-  // Runs whenever the cart items (`cartItems`), user status, or hydration status change.
+  // Effect 2: Save cart to Firestore whenever it changes for a logged-in user
   useEffect(() => {
-    // Only save to Firestore if the user is logged in and the cart has loaded from localStorage
-    if (user && _hasHydrated) {
+    if (user && _hasHydrated) { // Only run if user is logged in and cart is ready
       const cartRef = doc(db, 'users', user.uid);
-      // Save the entire cart `items` array under the 'cart' field in the user's document.
-      // { merge: true } prevents overwriting other potential user data.
-      setDoc(cartRef, { cart: cartItems }, { merge: true });
+      setDoc(cartRef, { cart: cartItems }, { merge: true }); // Save cart data
     }
-  }, [cartItems, user, _hasHydrated]); // Dependencies array
+  }, [cartItems, user, _hasHydrated]); // Re-run if cart or user changes
 
-  // Effect 3: Shows the sign-up offer modal to guest users after a delay.
-  // Runs when authentication state or loading status changes.
+  // Effect 3: Show the sign-up offer modal to guests after a delay
   useEffect(() => {
-    // Don't show the modal if authentication is still loading or if the user is logged in
-    if (isLoading || user) return;
-    
-    // Check if the user already dismissed the modal during this browser session
+    if (isLoading || user) return; // Don't show if loading or logged in
     const offerDismissed = sessionStorage.getItem('signupOfferDismissed');
-    if (offerDismissed) return;
+    if (offerDismissed) return; // Don't show if dismissed this session
+    const timer = setTimeout(() => { setOfferModalOpen(true); }, 15000); // 15s delay
+    return () => clearTimeout(timer); // Clear timer on unmount or state change
+  }, [user, isLoading]);
 
-    // Set a timer to open the modal after 15 seconds
-    const timer = setTimeout(() => { setOfferModalOpen(true); }, 15000); // 15 seconds
-
-    // Cleanup function: Clear the timer if the component unmounts or if user/loading state changes before 15s
-    return () => clearTimeout(timer);
-  }, [user, isLoading]); // Dependencies array
-
-  // Function passed to the modal to handle closing it
+  // Function to close the sign-up modal and remember dismissal for the session
   const handleCloseModal = () => {
     setOfferModalOpen(false);
-    // Use sessionStorage to remember dismissal only for the current browser session
     sessionStorage.setItem('signupOfferDismissed', 'true');
   };
 
-  // Function to toggle between 'light' and 'dark' themes
+  // Function to toggle the theme mode state
   const toggleTheme = () => {
-    setTheme(theme === 'light' ? 'dark' : 'light');
+    setThemeMode(themeMode === 'light' ? 'dark' : 'light');
   };
-  
-  // Select the appropriate theme object based on the current state
-  const currentTheme = theme === 'light' ? lightTheme : darkTheme;
 
   return (
-    // ThemeProvider makes the 'theme' object available to all styled-components below it
-    <ThemeProvider theme={currentTheme}> 
-      {/* GlobalStyles must be INSIDE ThemeProvider to access the theme */}
-      <GlobalStyles /> 
-      
-      {/* Toaster provides the context for showing toast notifications */}
-      <Toaster 
+    // ThemeProvider is still needed for other components that might use useTheme() or theme prop directly
+    <ThemeProvider theme={currentTheme}>
+      {/* GlobalStyles now works correctly without causing the TS error */}
+      <GlobalStyles />
+
+      {/* Toaster component for displaying notifications */}
+      <Toaster
         position="bottom-center"
         toastOptions={{ style: { background: '#333', color: '#fff' } }}
       />
-      
       {/* Conditionally render the sign-up modal */}
       {isOfferModalOpen && <SignUpOfferModal onClose={handleCloseModal} />}
-      
-      {/* Render the site header */}
-      <Header toggleTheme={toggleTheme} theme={theme} />
 
-      {/* Main content area where pages will be rendered */}
+      {/* Pass the toggle function and current mode ('light'/'dark') to Header */}
+      <Header toggleTheme={toggleTheme} theme={themeMode} />
+
+      {/* Main content area where pages are rendered by React Router */}
       <MainContent>
-        {/* React Router's component for defining application routes */}
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/catalog" element={<CatalogPage />} />
@@ -148,11 +137,11 @@ function App() {
   );
 }
 
-// Styled component for the main content area to handle responsive padding
+// Styled component for the main content area with responsive padding
 const MainContent = styled.main`
   padding: 2rem;
   @media (max-width: 768px) {
-    padding: 1rem; // Reduce padding on smaller screens
+    padding: 1rem; // Less padding on smaller screens
   }
 `;
 
